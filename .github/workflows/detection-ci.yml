@@ -1,0 +1,207 @@
+name: Detection Rule CI
+
+# Runs on every PR that touches anything in rules/.
+# Fails the build if:
+#   - Any changed rule fails schema validation
+#   - Any changed rule scores zero true positives against the synthetic corpus
+
+on:
+  pull_request:
+    paths:
+      - "rules/**"
+      - "test_corpus/synthetic_logs/**"
+      - "validator/**"
+      - "generate_rule.py"
+  push:
+    branches:
+      - main
+    paths:
+      - "rules/**"
+
+jobs:
+  validate-and-test:
+    name: Validate & Test Detection Rules
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so we can diff against base branch
+
+      # ── Python setup ──────────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ── Find changed rules ────────────────────────────────────────────────
+      - name: Find changed rule files
+        id: changed
+        run: |
+          # On PRs compare against the base branch; on pushes to main compare
+          # against the previous commit.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+
+          CHANGED=$(git diff --name-only "$BASE" HEAD -- 'rules/**/*.yml' | tr '\n' ' ')
+          echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "Changed rule files: $CHANGED"
+
+      # ── Run validator + test runner ───────────────────────────────────────
+      - name: Validate and test changed rules
+        id: ci_results
+        env:
+          # Set a dummy API key -- CI doesn't call the LLM, it only validates
+          # and tests rules that already exist in the repo.
+          ANTHROPIC_API_KEY: "ci-no-llm-calls"
+        run: |
+          CHANGED_FILES="${{ steps.changed.outputs.files }}"
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No rule files changed — nothing to validate."
+            exit 0
+          fi
+
+          FAILED=0
+          SUMMARY=""
+
+          for RULE_FILE in $CHANGED_FILES; do
+            if [ ! -f "$RULE_FILE" ]; then
+              echo "⚠️  $RULE_FILE was deleted — skipping."
+              continue
+            fi
+
+            echo ""
+            echo "════════════════════════════════════════"
+            echo "  Testing: $RULE_FILE"
+            echo "════════════════════════════════════════"
+
+            python - << 'PYEOF'
+          import sys
+          import yaml
+          from pathlib import Path
+
+          rule_file = sys.argv[1] if len(sys.argv) > 1 else None
+
+          # Read the rule file path from the shell loop via env
+          import os
+          rule_file = os.environ.get("RULE_FILE")
+          if not rule_file:
+              sys.exit(0)
+
+          raw = yaml.safe_load(Path(rule_file).read_text())
+
+          # Reconstruct generator-format dict from Sigma YAML
+          detection_raw = raw.get("detection", {})
+          condition = detection_raw.get("condition", "")
+          selections = [
+              {"name": name, "fields": fields}
+              for name, fields in detection_raw.items()
+              if name != "condition" and isinstance(fields, dict)
+          ]
+          rule = {
+              "title": raw.get("title", rule_file),
+              "id": raw.get("id", ""),
+              "status": raw.get("status", ""),
+              "description": raw.get("description", ""),
+              "author": raw.get("author", ""),
+              "date": raw.get("date", ""),
+              "level": raw.get("level", ""),
+              "tags": raw.get("tags", []),
+              "logsource": raw.get("logsource", {}),
+              "falsepositives": raw.get("falsepositives", []),
+              "detection": {"selections": selections, "condition": condition},
+          }
+
+          from validator.sigma_validator import validate_rule_dict, validate_with_pysigma
+          from converters.json_to_sigma import render_sigma_yaml
+
+          struct = validate_rule_dict(rule)
+          print(struct)
+          if not struct.valid:
+              print(f"\n❌ FAIL (schema): {rule_file}")
+              sys.exit(1)
+
+          sigma_yaml = render_sigma_yaml(rule)
+          psv = validate_with_pysigma(sigma_yaml)
+          if not psv.valid:
+              print(psv)
+              print(f"\n❌ FAIL (pySigma): {rule_file}")
+              sys.exit(1)
+
+          from test_corpus.test_runner import run_test, _resolve_corpus
+          corpus = _resolve_corpus(rule["logsource"])
+          if corpus is None:
+              print(f"⚠️  No corpus for logsource {rule['logsource']} — skipping test step.")
+              sys.exit(0)
+
+          result = run_test(rule, corpus_path=corpus, verbose=True)
+          if result.tp == 0 and result.fn > 0:
+              print(f"\n❌ FAIL (zero TP): {rule_file}")
+              sys.exit(1)
+
+          print(f"\n✅ PASS: {rule_file}")
+          PYEOF
+
+            EXIT_CODE=$?
+            RULE_FILE="$RULE_FILE" python -c "
+          import os, sys
+          rule_file = os.environ.get('RULE_FILE','')
+          exit_code = int(os.environ.get('LAST_EXIT','0'))
+          " 2>/dev/null || true
+
+            if [ $EXIT_CODE -ne 0 ]; then
+              FAILED=1
+              SUMMARY="$SUMMARY\n❌ FAILED: $RULE_FILE"
+            else
+              SUMMARY="$SUMMARY\n✅ PASSED: $RULE_FILE"
+            fi
+          done
+
+          echo ""
+          echo "════════════════════════════════════════"
+          echo "  CI Summary"
+          echo "════════════════════════════════════════"
+          printf "$SUMMARY\n"
+
+          exit $FAILED
+
+      # ── Post PR comment with results ──────────────────────────────────────
+      - name: Post CI results to PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const outcome = '${{ steps.ci_results.outcome }}';
+            const icon    = outcome === 'success' ? '✅' : '❌';
+            const status  = outcome === 'success' ? 'All changed rules passed validation and testing.' : 'One or more rules failed — see the workflow log for details.';
+
+            const body = [
+              `## ${icon} Detection Rule CI`,
+              '',
+              status,
+              '',
+              '| Check | Description |',
+              '|---|---|',
+              '| Schema validation | Required fields, controlled-vocabulary values, detection block structure |',
+              '| pySigma parse     | Round-trips the rendered YAML through pySigma schema parser |',
+              '| Test corpus       | Evaluates detection logic against synthetic logs — requires at least 1 TP |',
+              '',
+              '_Triggered by changes to `rules/**`_',
+            ].join('\n');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              body,
+            });

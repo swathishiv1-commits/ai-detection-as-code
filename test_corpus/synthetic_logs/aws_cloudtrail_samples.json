@@ -1,0 +1,218 @@
+[
+  {
+    "_comment": "MALICIOUS: AssumeRole from unusual geography, then ListBuckets",
+    "_label": "malicious",
+    "_technique": "T1078.004 - Valid Cloud Accounts",
+    "eventVersion": "1.08",
+    "eventTime": "2026-06-01T03:14:22Z",
+    "eventSource": "sts.amazonaws.com",
+    "eventName": "AssumeRole",
+    "awsRegion": "eu-west-1",
+    "sourceIPAddress": "103.21.244.0",
+    "userAgent": "aws-cli/2.13.0",
+    "requestParameters": {
+      "roleArn": "arn:aws:iam::123456789012:role/DevOpsRole",
+      "roleSessionName": "sess-3f9a"
+    },
+    "responseElements": {
+      "credentials": {
+        "accessKeyId": "ASIAQNMFAKE0000001",
+        "sessionToken": "FQoDYXdzE..."
+      }
+    },
+    "userIdentity": {
+      "type": "IAMUser",
+      "userName": "svc-deploy",
+      "accountId": "123456789012"
+    },
+    "errorCode": null
+  },
+  {
+    "_comment": "MALICIOUS: S3 bucket enumeration following credential theft",
+    "_label": "malicious",
+    "_technique": "T1619 - Cloud Storage Object Discovery",
+    "eventVersion": "1.08",
+    "eventTime": "2026-06-01T03:15:04Z",
+    "eventSource": "s3.amazonaws.com",
+    "eventName": "ListBuckets",
+    "awsRegion": "eu-west-1",
+    "sourceIPAddress": "103.21.244.0",
+    "userAgent": "aws-cli/2.13.0",
+    "requestParameters": null,
+    "responseElements": null,
+    "userIdentity": {
+      "type": "AssumedRole",
+      "arn": "arn:aws:sts::123456789012:assumed-role/DevOpsRole/sess-3f9a",
+      "accountId": "123456789012"
+    },
+    "errorCode": null
+  },
+  {
+    "_comment": "MALICIOUS: DeleteTrail - attacker covering tracks",
+    "_label": "malicious",
+    "_technique": "T1562.008 - Impair Defenses: Disable Cloud Logs",
+    "eventVersion": "1.08",
+    "eventTime": "2026-06-01T03:22:11Z",
+    "eventSource": "cloudtrail.amazonaws.com",
+    "eventName": "DeleteTrail",
+    "awsRegion": "eu-west-1",
+    "sourceIPAddress": "103.21.244.0",
+    "userAgent": "aws-cli/2.13.0",
+    "requestParameters": {
+      "name": "arn:aws:cloudtrail:eu-west-1:123456789012:trail/management-events"
+    },
+    "userIdentity": {
+      "type": "AssumedRole",
+      "arn": "arn:aws:sts::123456789012:assumed-role/DevOpsRole/sess-3f9a",
+      "accountId": "123456789012"
+    },
+    "errorCode": null
+  },
+  {
+    "_comment": "MALICIOUS: StopLogging - disable CloudTrail",
+    "_label": "malicious",
+    "_technique": "T1562.008 - Impair Defenses: Disable Cloud Logs",
+    "eventVersion": "1.08",
+    "eventTime": "2026-06-01T03:22:45Z",
+    "eventSource": "cloudtrail.amazonaws.com",
+    "eventName": "StopLogging",
+    "awsRegion": "eu-west-1",
+    "sourceIPAddress": "103.21.244.0",
+    "userAgent": "aws-cli/2.13.0",
+    "requestParameters": {
+      "name": "arn:aws:cloudtrail:eu-west-1:123456789012:trail/management-events"
+    },
+    "userIdentity": {
+      "type": "AssumedRole",
+      "arn": "arn:aws:sts::123456789012:assumed-role/DevOpsRole/sess-3f9a",
+      "accountId": "123456789012"
+    },
+    "errorCode": null
+  },
+  {
+    "_comment": "MALICIOUS: CreateAccessKey for another IAM user - persistence",
+    "_label": "malicious",
+    "_technique": "T1098 - Account Manipulation",
+    "eventVersion": "1.08",
+    "eventTime": "2026-06-01T03:25:01Z",
+    "eventSource": "iam.amazonaws.com",
+    "eventName": "CreateAccessKey",
+    "awsRegion": "us-east-1",
+    "sourceIPAddress": "103.21.244.0",
+    "userAgent": "aws-cli/2.13.0",
+    "requestParameters": {
+      "userName": "backup-svc"
+    },
+    "userIdentity": {
+      "type": "AssumedRole",
+      "arn": "arn:aws:sts::123456789012:assumed-role/DevOpsRole/sess-3f9a",
+      "accountId": "123456789012"
+    },
+    "errorCode": null
+  },
+  {
+    "_comment": "BENIGN: Normal AssumeRole from known corporate IP",
+    "_label": "benign",
+    "eventVersion": "1.08",
+    "eventTime": "2026-06-01T09:05:30Z",
+    "eventSource": "sts.amazonaws.com",
+    "eventName": "AssumeRole",
+    "awsRegion": "eu-west-1",
+    "sourceIPAddress": "185.220.100.10",
+    "userAgent": "aws-cli/2.13.0",
+    "requestParameters": {
+      "roleArn": "arn:aws:iam::123456789012:role/DevOpsRole",
+      "roleSessionName": "developer-session"
+    },
+    "userIdentity": {
+      "type": "IAMUser",
+      "userName": "alice.smith",
+      "accountId": "123456789012"
+    },
+    "errorCode": null
+  },
+  {
+    "_comment": "BENIGN: Regular S3 access from app server",
+    "_label": "benign",
+    "eventVersion": "1.08",
+    "eventTime": "2026-06-01T09:15:00Z",
+    "eventSource": "s3.amazonaws.com",
+    "eventName": "GetObject",
+    "awsRegion": "eu-west-1",
+    "sourceIPAddress": "10.0.1.50",
+    "userAgent": "aws-sdk-python/1.29.0",
+    "requestParameters": {
+      "bucketName": "my-app-assets",
+      "key": "config/app.json"
+    },
+    "userIdentity": {
+      "type": "AssumedRole",
+      "arn": "arn:aws:sts::123456789012:assumed-role/AppServerRole/i-0a1b2c3d",
+      "accountId": "123456789012"
+    },
+    "errorCode": null
+  },
+  {
+    "_comment": "BENIGN: Failed AssumeRole due to MFA - typical misconfiguration",
+    "_label": "benign",
+    "eventVersion": "1.08",
+    "eventTime": "2026-06-01T10:00:00Z",
+    "eventSource": "sts.amazonaws.com",
+    "eventName": "AssumeRole",
+    "awsRegion": "eu-west-1",
+    "sourceIPAddress": "185.220.100.10",
+    "userAgent": "Boto3/1.28.0",
+    "requestParameters": {
+      "roleArn": "arn:aws:iam::123456789012:role/AdminRole",
+      "roleSessionName": "mfa-session"
+    },
+    "userIdentity": {
+      "type": "IAMUser",
+      "userName": "bob.jones",
+      "accountId": "123456789012"
+    },
+    "errorCode": "AccessDenied",
+    "errorMessage": "MultiFactorAuthentication required"
+  },
+  {
+    "_comment": "BENIGN: IAM key rotation by ops team",
+    "_label": "benign",
+    "eventVersion": "1.08",
+    "eventTime": "2026-06-01T11:30:00Z",
+    "eventSource": "iam.amazonaws.com",
+    "eventName": "CreateAccessKey",
+    "awsRegion": "us-east-1",
+    "sourceIPAddress": "185.220.100.10",
+    "userAgent": "aws-cli/2.13.0",
+    "requestParameters": {
+      "userName": "backup-svc"
+    },
+    "userIdentity": {
+      "type": "IAMUser",
+      "userName": "ops-admin",
+      "accountId": "123456789012"
+    },
+    "errorCode": null
+  },
+  {
+    "_comment": "BENIGN: CloudTrail update by security team (expected maintenance)",
+    "_label": "benign",
+    "eventVersion": "1.08",
+    "eventTime": "2026-06-01T14:00:00Z",
+    "eventSource": "cloudtrail.amazonaws.com",
+    "eventName": "UpdateTrail",
+    "awsRegion": "eu-west-1",
+    "sourceIPAddress": "185.220.100.10",
+    "userAgent": "aws-cli/2.13.0",
+    "requestParameters": {
+      "name": "management-events",
+      "includeGlobalServiceEvents": true
+    },
+    "userIdentity": {
+      "type": "IAMUser",
+      "userName": "security-team",
+      "accountId": "123456789012"
+    },
+    "errorCode": null
+  }
+]

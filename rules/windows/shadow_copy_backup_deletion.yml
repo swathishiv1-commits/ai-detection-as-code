@@ -1,0 +1,27 @@
+title: Shadow Copy and Backup Catalog Deletion Pre-Ransomware Indicator
+id: 8f0a1d2e-1111-4a3b-9c4d-000000000003
+status: experimental
+description: Detects deletion of volume shadow copies and Windows backup catalogs,
+  a common precursor step ransomware uses to prevent victim recovery before encryption
+  begins.
+references: []
+author: AI-Generated (review required)
+date: '2026-06-23'
+tags:
+- attack.t1490
+- attack.impact
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection_vssadmin:
+    Image|endswith: vssadmin.exe
+    CommandLine|contains: delete shadows
+  selection_wbadmin:
+    Image|endswith: wbadmin.exe
+    CommandLine|contains: delete catalog
+  condition: selection_vssadmin or selection_wbadmin
+falsepositives:
+- Legitimate disk space cleanup scripts run by IT operations
+- Backup software reconfiguration performed by an administrator
+level: high

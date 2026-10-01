@@ -1,0 +1,26 @@
+title: AWS CloudTrail Logging Disabled or Deleted
+id: 8f0a1d2e-1111-4a3b-9c4d-000000000005
+status: experimental
+description: Detects attempts to stop or delete a CloudTrail trail, which would blind
+  a defender to subsequent API activity. Commonly seen after an attacker gains privileged
+  cloud credentials.
+references: []
+author: AI-Generated (review required)
+date: '2026-06-23'
+tags:
+- attack.t1562.008
+- attack.defense-evasion
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection_main:
+    eventName:
+    - DeleteTrail
+    - StopLogging
+    - UpdateTrail
+  condition: selection_main
+falsepositives:
+- Security team updating trail configuration during planned maintenance
+- Infrastructure-as-code pipeline running trail updates as part of a deployment
+level: high

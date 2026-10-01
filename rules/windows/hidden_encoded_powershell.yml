@@ -1,0 +1,26 @@
+title: Hidden Encoded PowerShell Downloading Remote Script
+id: 8f0a1d2e-1111-4a3b-9c4d-000000000004
+status: experimental
+description: Detects PowerShell launched with hidden window style and a base64-encoded
+  command, a common pattern for fileless second-stage payload delivery.
+references: []
+author: AI-Generated (review required)
+date: '2026-06-23'
+tags:
+- attack.t1059.001
+- attack.execution
+- attack.defense-evasion
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection_main:
+    Image|endswith: powershell.exe
+    CommandLine|contains|all:
+    - -w hidden
+    - -enc
+  condition: selection_main
+falsepositives:
+- Legitimate IT automation or configuration management scripts that run PowerShell
+  hidden and encoded by design
+level: high
